@@ -32,7 +32,14 @@ setup(
     # https://packaging.python.org/specifications/core-metadata/#name
     name="mebatch",  # Required
     version="1.0.0",  # Required
-    install_requires=["Click", "readchar", "fabric", "paramiko", "slack-sdk"],
+    install_requires=[
+        "Click",
+        "readchar",
+        "fabric",
+        "paramiko",
+        "slack_sdk",
+        "filelock",
+    ],
     py_modules=["mebatch"],
     packages=find_packages(),  # Required
     # Specify which Python versions you support. In contrast to the

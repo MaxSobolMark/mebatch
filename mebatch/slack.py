@@ -1,3 +1,4 @@
+from typing import Dict, Optional
 import os
 import click
 
@@ -5,9 +6,7 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 
-@click.command()
-@click.option("--message", "-m", required=True, help="Message to send to Slack")
-def send_slack_message(message):
+def send_slack_message(message: str, thread_ts: Optional[str] = None) -> Dict[str, str]:
     slack_token = os.environ["SLACK_BOT_TOKEN"]
     client = WebClient(token=slack_token)
     user_id = os.environ["SLACK_USER_ID"]
@@ -16,10 +15,19 @@ def send_slack_message(message):
         response = client.chat_postMessage(
             channel=channel_id,
             text=message,
+            thread_ts=thread_ts,
         )
     except SlackApiError as e:
         print(f"Error posting message: {e}")
 
+    return response
+
+
+@click.command()
+@click.option("--message", "-m", required=True, help="Message to send to Slack")
+def send_slack_message_cli(message):
+    send_slack_message(message)
+
 
 if __name__ == "__main__":
-    send_slack_message()
+    send_slack_message_cli()

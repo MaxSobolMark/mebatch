@@ -1,96 +1,26 @@
 from typing import Dict, List, Tuple, Optional
 import click
 import os
-import getpass
-import threading
-import subprocess
+from mebatch.job_pool import get_active_pools, make_pool, add_job_to_pool
 
 
 VARIABLE_MARKER = "***"
 ASKME_MARKER = "___ASKME___"
 TIME_LIMIT_MARKER = "___TIME___"
 MEMORY_MARKER = "___MEMORY___"
-WS_USER = "maxsobolmark"
-
-
-def get_current_conda_env() -> str:
-    """
-    Returns the name of the current conda environment.
-    """
-    print("Getting current conda environment...")
-    result = subprocess.run(
-        ["/iris/u/maxsobolmark/miniconda3/bin/conda", "info"], stdout=subprocess.PIPE
-    )
-    output = result.stdout.decode("utf-8")
-
-    # Parse the output to get the active environment location
-    env_lines = output.split("\n")
-    active_env_line = [
-        line for line in env_lines if line.strip().startswith("active environment")
-    ]
-    active_env_location = active_env_line[0].split(": ")[1]
-    return active_env_location
-
-
-def run_command_on_ws(
-    command: str, ws_number: int, name: str, password: Optional[str] = None
-) -> str:
-    from fabric import Connection  # For running commands on workstations
-    from paramiko.ssh_exception import AuthenticationException
-
-    # Get password to connect to workstation
-    password = password or getpass.getpass("Password: ")
-    # Connect to workstation
-    while True:
-        try:
-            connection = Connection(
-                f"iris-ws-{ws_number}.stanford.edu",
-                user=WS_USER,
-                connect_kwargs={"password": password},
-            )
-            break
-        except AuthenticationException:
-            password = getpass.getpass("Incorrect password. Try again: ")
-    print("Sending command to workstation...")
-
-    def send_command(name, command):
-        # Start a new tmux session
-        name = name.replace(".", "_")
-        connection.run(
-            f"kinit {WS_USER} -l 3d -k -t ~/.keytab/maxsobolmark.keytab && aklog"
-        )
-        connection.run(f"tmux new-session -d -s {name}")
-        # Create a new tmux window
-        connection.run(f"tmux new-window -t {name} -n window")
-        # Authenticate
-        connection.run(
-            f"tmux send-keys -t {name} 'kinit {WS_USER} -l 3d -k -t ~/.keytab/maxsobolmark.keytab &&"
-            f" aklog' C-m"
-        )
-        # Cd to the right directory
-        connection.run(f"tmux send-keys -t {name} 'cd {os.getcwd()}' C-m")
-        # Send slack message to notify that the command has started
-        connection.run(
-            f"/iris/u/maxsobolmark/decoupled_iql_env/bin/python"
-            f" /iris/u/maxsobolmark/mebatch/mebatch/slack.py --message 'Started running command on ws-{ws_number}: {name}'"
-        )
-        # Run the command
-        connection.run(
-            f"tmux send-keys -t {name}:window.0 'conda activate {get_current_conda_env()} &&"
-            f" {command} && sleep 5 && tmux kill-session' C-m"
-        )
-        # # Send slack message to notify that the command has finished
-        # connection.run(
-        #     f"tmux send-keys -t {name}:window.0 '/iris/u/maxsobolmark/decoupled_iql_env/bin/python"
-        #     f'/iris/u/maxsobolmark/mebatch/mebatch/slack.py --message "Finished running command on ws-{ws_number}: {name}"\' C-m'
-        # )
-        # # Set remain-on-exit to off so that the tmux session will close when the command finishes
-        # connection.run(f"tmux set-option -t {name} remain-on-exit off")
-        # connection.run(f"tmux send-keys -t {name}:window.0 'tmux kill-session' C-m")
-
-    thread = threading.Thread(target=send_command, args=(name, command))
-    thread.start()
-    return password
+SAVE_PATH = os.environ.get("MEBATCH_PATH", f'/iris/u/{os.environ["USER"]}/mebatch')
+# The command to run after each run is finished (only if the job is run on this session).
+# This is useful for e.g. running kinit aklog with a keytab file on workstations.
+COMMAND_AFTER_RUNS = os.environ.get("MEBATCH_COMMAND_AFTER_RUNS", "")
+JOB_POOL_PIPE_STDOUT = (
+    os.environ.get("MEBATCH_JOB_POOL_PIPE_STDOUT", "true").lower() == "true"
+)
+JOB_POOL_PIPE_STDERR = (
+    os.environ.get("MEBATCH_JOB_POOL_PIPE_STDERR", "true").lower() == "true"
+)
+JOB_POOL_SEND_SLACK_MESSAGES = (
+    os.environ.get("MEBATCH_JOB_POOL_SEND_SLACK_MESSAGES", "true").lower() == "true"
+)
 
 
 def ebatch(
@@ -99,37 +29,80 @@ def ebatch(
     ask_priority: bool,
     time_limit: int,
     memory: int,
-    ws_password: Optional[str] = None,
-) -> Tuple[bool, str, str]:
+) -> Tuple[bool, str]:
+    """
+    Sends a command to the SLURM queue.
+
+    Args:
+        name: The name of the job.
+        command: The command to run.
+        ask_priority: Whether to ask the user for the priority of the job. If False, defaults to
+            high.
+        time_limit: The time limit for the job in hours.
+        memory: The memory limit for the job in GB.
+
+    Returns:
+        A tuple containing:
+            - Whether the job is to be run on this session.
+            - The priority of the job.
+    """
     if not ask_priority:
         priority = "h"
     else:
         priority = ""
-        while (
-            priority != "h"
-            and priority != "l"
-            and priority != "r"
-            and priority != "s"
-            and priority != "w"
-        ):
+        while priority not in ["h", "l", "r", "s", "S", "p"]:
             print(
-                f"Sending {name}. (h)igh/(l)ow-priority/(r)un on this session/(s)kip/(w)orkstation?"
+                f"Sending {name}. (h)igh/(l)ow-priority/(r)un on this session/(s)kip/job (p)ool?"
             )
             priority = input()
     if priority == "r":
-        return True, priority, ws_password
-    if priority == "s":
-        return False, priority, ws_password
-    if priority == "w":
-        ws_number = ""
-        while not ws_number.isdigit() or int(ws_number) > 18 or int(ws_number) < 1:
-            print("Which workstation? (1-18)")
-            ws_number = input()
-        ws_password = run_command_on_ws(command, int(ws_number), name, ws_password)
-        return False, priority, ws_password
+        return True, priority
+    if priority.lower() == "s":
+        return False, priority
+    if priority == "p":
+        active_pools = get_active_pools()
+        if len(active_pools) == 0:
+            print("No active pools found.")
+        else:
+            print("Active pools:")
+            for pool_id in active_pools:
+                print(f"- {pool_id}")
+        print("Which pool to add to? (Enter a new name to create a new pool.)")
+        pool_id = input()
+        if pool_id not in active_pools:
+            print("Creating new pool. High or low priority? (h/l)")
+            priority = input().lower()
+            while priority not in ["h", "l"]:
+                print("Please enter h or l.")
+                priority = input().lower()
+            print("How many parallel jobs? (Enter a number or leave blank for 2.)")
+            num_parallel_jobs = input()
+            while not num_parallel_jobs.isdigit():
+                if num_parallel_jobs == "":
+                    num_parallel_jobs = "2"
+                else:
+                    print("Please enter a number.")
+                    num_parallel_jobs = input()
+            make_pool(pool_id)
+            name = f"MEBatch-JobPool-{pool_id}-x{num_parallel_jobs}{priority.upper()}"
+            command = f"python -m mebatch.job_pool --id={pool_id} --num_parallel_jobs={num_parallel_jobs}"
+            if not JOB_POOL_PIPE_STDOUT:
+                command += " --no-pipe-stdout"
+            if not JOB_POOL_PIPE_STDERR:
+                command += " --no-pipe-stderr"
+            if not JOB_POOL_SEND_SLACK_MESSAGES:
+                command += " --no-send-slack-messages"
+        else:
+            print("Adding to existing pool...")
+        add_job_to_pool(pool_id, name, command)
+        if pool_id in active_pools:
+            return False, priority
+
     conf_file = "slconf" if priority == "l" else "slconf-hi"
     while not os.path.exists(f"{os.getcwd()}/{conf_file}"):
-        print(f"Could not find {conf_file} in current directory.")
+        print(
+            f"Could not find {conf_file} in current directory. Example files can be found at /iris/u/maxsobolmark/slconf-(hi-)example"
+        )
         print('Go ahead and copy it, I\'ll wait. (Press "Enter" when done.)')
         input()
     with open(f"{os.getcwd()}/{conf_file}", "r") as config:
@@ -140,7 +113,7 @@ def ebatch(
         cmd = cmd.replace(MEMORY_MARKER, f"{memory}G")
         print(f"Running command: {cmd}")
         os.system(cmd)
-    return False, priority, None
+    return False, priority
 
 
 def save_command_to_history(
@@ -150,11 +123,14 @@ def save_command_to_history(
     job_order: str,
     priority_responses: str,
 ):
+    """
+    Saves the command to the history file.
+    """
     ask_order = job_order == list(range(len(job_order)))
     job_order_str = ""
     if ask_order:
         job_order_str = f"--ask-order {job_order}"
-    with open("/iris/u/maxsobolmark/mebatch/mebatch_history.txt", "a") as f:
+    with open(f"{SAVE_PATH}/mebatch_history.txt", "a") as f:
         f.write(
             f'\nmebatch {run_names} "{commands}" --previous_askme_responses {previous_askme_responses} {job_order_str}; priority responses: {"".join(priority_responses)} \n'
         )
@@ -163,8 +139,9 @@ def save_command_to_history(
 def ask_job_order(run_names: List[str]) -> List[int]:
     """
     Asks the user for the order in which to run the commands.
+    Expects the user to enter a comma-separated list of integers.
     """
-    print("Enter order in which to run commands:")
+    print("Enter order in which to run commands, comma-separated:")
     for i, name in enumerate(run_names):
         print(f"{i}: {name}")
     order = input()
@@ -204,11 +181,17 @@ def mebatch(
 ):
     """
     run_names and commands will contain encoded lists of options using the following format
-    python example.py --seed=$$$seed:0,1,2$$$
-    --save_path=./exp/$$$seed$$$/$$$seed:first,second,third$$$
-    --learning_rate=$$$lr:0.1,0.2,0.3$$$
-    This example command will run ebatch 9=3*3 times (3 seeds time 3 learning rates).
+    python example.py --seed=***seed:0,1,2***
+    --save_path=./exp/***seed***/***seed:first,second,third***
+    --learning_rate=***lr:0.1,0.2,0.3***
+    This example command will run ebatch 9=3*3 times (3 seeds * 3 learning rates).
     """
+    if not os.path.exists(SAVE_PATH):
+        os.makedirs(SAVE_PATH)
+        os.makedirs(f"{SAVE_PATH}/job_pools")
+        os.makedirs(f"{SAVE_PATH}/job_pools/active_pools")
+        os.makedirs(f"{SAVE_PATH}/job_pools/finished_pools")
+        os.makedirs(f"{SAVE_PATH}/job_pools/killed_pools")
     commands_to_run = mebatch_helper(run_names, commands, {})
     askme_commands_to_run = []
     previous_askme_responses = previous_askme_responses.split(",")
@@ -232,14 +215,16 @@ def mebatch(
     print("----------------------------------------")
     print(f"Running {len(commands_to_run)} commands.")
     print("----------------------------------------")
-    ws_password = None
     for run_name, command in commands_to_run:
-        run_on_this_session, priority, ws_password = ebatch(
-            run_name, command, True, time_limit, memory, ws_password
+        run_on_this_session, priority = ebatch(
+            run_name, command, True, time_limit, memory
         )
         if run_on_this_session:
             commands_to_run_on_this_session.append(command)
         priority_responses.append(priority)
+        if priority == "S":
+            print("Skipping rest of commands due to priority 'S'")
+            break
         print("----------------------------------------")
     print("----------------------------------------")
     print(f"Running {len(commands_to_run_on_this_session)} commands on this session.")
@@ -249,10 +234,10 @@ def mebatch(
             f"Running command {i + 1}/{len(commands_to_run_on_this_session)}: {command}"
         )
         os.system(command)
-        print("Command finished. Running kinitaklog")
-        os.system(
-            "kinit maxsobolmark -l 3d -k -t ~/.keytab/maxsobolmark.keytab && aklog"
-        )
+        print("Command finished.")
+        if COMMAND_AFTER_RUNS:
+            print(f"Running '{COMMAND_AFTER_RUNS}'")
+            os.system(COMMAND_AFTER_RUNS)
         print("----------------------------------------")
     if len(askme_responses) > 0:
         print("To use askme responses for next run, add:")
@@ -269,8 +254,17 @@ def mebatch_helper(
     variables_to_chosen_values: Dict[str, Tuple[int, str]] = {},
 ) -> List[Tuple[str, str]]:
     """
-    variables_to_chosen_values: dictionary from variable name to tuples with
-        choice index and chosen string.
+    Replaces all variables in run_names and commands with the chosen values, and returns
+    all combinations of run_names and commands.
+
+    Args:
+        run_names: string with run names, with variables marked with VARIABLE_MARKER.
+        commands: string with commands, with variables marked with VARIABLE_MARKER.
+        variables_to_chosen_values: dictionary from variable name to tuples with
+            choice index and chosen string.
+
+    Returns:
+        List of tuples with run_names and commands.
     """
 
     if run_names.find(VARIABLE_MARKER) == -1 and commands.find(VARIABLE_MARKER) == -1:
@@ -292,6 +286,7 @@ def mebatch_helper(
         first_unassigned_variable_index + len(VARIABLE_MARKER) : variable_string_end
     ]
     # variable_string contains only the variable info, without the marker.
+    # E.g. "seed:0,1,2" or "lr:0.1,0.2,0.3", or "seed"
     variable_name_end_position = variable_string.find(":")
     variable_name = (
         variable_string[:variable_name_end_position]
@@ -301,13 +296,14 @@ def mebatch_helper(
     if not (
         variable_name_end_position != -1 or variable_name in variables_to_chosen_values
     ):
+        print(f"Variable {variable_name} was referenced but not assigned.")
         import pdb
 
         pdb.set_trace()
-    assert (
-        variable_name_end_position != -1 or variable_name in variables_to_chosen_values
-    )
+
     if variable_name in variables_to_chosen_values:
+        # Variable was already assigned, so we can replace it with the chosen value and
+        # make recursive call.
         variable_value = variables_to_chosen_values[variable_name][1]
         if variable_name_end_position != -1:
             # User passed additional variable values after ':', so replace value for that.
@@ -333,8 +329,9 @@ def mebatch_helper(
                 run_names, truncated_string, variables_to_chosen_values
             )
 
-    # variable hasn't been chosen, so choose every possible value
+    # Variable hasn't been chosen, so choose every possible value
     commands_to_run = []
+    # value_options is what comes after the ":" in the variable string, e.g. [0,1,2]
     value_options = variable_string[variable_name_end_position + 1 :].split(",")
     for i, variable_value in enumerate(value_options):
         truncated_string = (
@@ -367,9 +364,9 @@ def askme_helper(
     """
     Gives the user the option to manually specify parts of the command.
     """
-    if command.find(ASKME_MARKER) == -1:
-        return command, ""
     askme_index = command.find(ASKME_MARKER)
+    if askme_index == -1:
+        return command, ""
     responses = []
     while askme_index != -1:
         print("previous_responses", previous_responses)
@@ -387,6 +384,3 @@ def askme_helper(
         )
         askme_index = command.find(ASKME_MARKER)
     return command, responses
-
-
-# python example.py --seed=$$$seed:0,1,2$$$ --save_path=./exp/$$$seed$$$/$$$seed:first,second,third$$$ --learning_rate=$$$lr:0.1,0.2,0.3$$$
