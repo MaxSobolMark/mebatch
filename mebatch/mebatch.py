@@ -26,9 +26,9 @@ JOB_POOL_SEND_SLACK_MESSAGES = (
 def ebatch(
     name: str,
     command: str,
-    ask_priority: bool,
     time_limit: int,
     memory: int,
+    priority: Optional[str] = None,
 ) -> Tuple[bool, str]:
     """
     Sends a command to the SLURM queue.
@@ -46,9 +46,7 @@ def ebatch(
             - Whether the job is to be run on this session.
             - The priority of the job.
     """
-    if not ask_priority:
-        priority = "h"
-    else:
+    if priority is None:
         priority = ""
         while priority not in ["h", "l", "r", "s", "S", "p"]:
             print(
@@ -216,9 +214,7 @@ def mebatch(
     print(f"Running {len(commands_to_run)} commands.")
     print("----------------------------------------")
     for run_name, command in commands_to_run:
-        run_on_this_session, priority = ebatch(
-            run_name, command, True, time_limit, memory
-        )
+        run_on_this_session, priority = ebatch(run_name, command, time_limit, memory)
         if run_on_this_session:
             commands_to_run_on_this_session.append(command)
         priority_responses.append(priority)
