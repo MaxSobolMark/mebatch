@@ -238,6 +238,7 @@ def job_worker(
             break
         # Sleep for a while before checking for new jobs.
         time.sleep(5)
+        print(tpu_availabilities)
 
 
 if __name__ == "__main__":

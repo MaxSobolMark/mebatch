@@ -139,7 +139,12 @@ def ebatch(
         )
         with new_jobs_file_lock:
             with tf.io.gfile.GFile(
-                f"{worker_mebatch_dir}/job_pools/active_pools/{worker_id}/new_jobs.txt",
+                tf.io.gfile.join(
+                    worker_mebatch_dir,
+                    "job_pools/active_pools",
+                    worker_id,
+                    "new_jobs.txt",
+                ),
                 "a",
             ) as new_jobs_file:
                 if worker_is_tpu:
