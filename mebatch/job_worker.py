@@ -130,7 +130,7 @@ def run_new_jobs(
                     executor.submit(
                         run_one_job,
                         job_name,
-                        f"{TPU_ENVIRONMENT_VARIABLES['TPU' + free_tpu]} {command}",
+                        f"{TPU_ENVIRONMENT_VARIABLES['TPU' + str(free_tpu)]} {command}",
                         send_slack_messages,
                     ).add_done_callback(callback)
                     num_jobs_submitted += 1
