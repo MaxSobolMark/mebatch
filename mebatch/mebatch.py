@@ -3,7 +3,7 @@ import click
 import os
 import tensorflow as tf  # For GCS support.
 from filelock import FileLock  # To lock the job queue file.
-from mebatch.GCS_file_lock import GCSFileLock
+from .GCS_file_lock import GCSFileLock
 from mebatch.job_pool import get_active_pools, make_pool, add_job_to_pool
 
 
