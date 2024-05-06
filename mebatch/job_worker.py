@@ -15,7 +15,7 @@ import concurrent.futures  # For the process pool.
 from mebatch.slack import send_slack_message
 import tensorflow as tf  # For GCS support.
 from filelock import FileLock  # To lock the job queue file.
-from mebatch.GCS_file_lock import GCSFileLock
+from .GCS_file_lock import GCSFileLock
 
 
 class GracefulKiller:
