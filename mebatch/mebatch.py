@@ -3,7 +3,7 @@ import click
 import os
 import tensorflow as tf  # For GCS support.
 from filelock import FileLock  # To lock the job queue file.
-from mebatch.job_worker import GCSFileLock
+from mebatch.GCS_file_lock import GCSFileLock
 from mebatch.job_pool import get_active_pools, make_pool, add_job_to_pool
 
 
@@ -236,6 +236,8 @@ def mebatch(
     --learning_rate=***lr:0.1,0.2,0.3***
     This example command will run ebatch 9=3*3 times (3 seeds * 3 learning rates).
     """
+    # prevent tensorflow from using GPUs
+    tf.config.set_visible_devices([], "GPU")
     if not os.path.exists(SAVE_PATH):
         os.makedirs(SAVE_PATH)
         os.makedirs(f"{SAVE_PATH}/job_pools")

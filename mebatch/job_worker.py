@@ -14,20 +14,7 @@ from mebatch.job_pool import MonitoredProcessPoolExecutor, GracefulKiller
 from mebatch.slack import send_slack_message
 import tensorflow as tf  # For GCS support.
 from filelock import FileLock  # To lock the job queue file.
-from gcs_mutex_lock import gcs_lock
-
-
-class GCSFileLock:
-    def __init__(self, file_path: str):
-        self.file_path = file_path
-        assert file_path.startswith("gs://"), "The file path must start with gs://."
-
-    def __enter__(self):
-        acquired = gcs_lock.wait_for_lock_expo(self.file_path)
-        assert acquired, f"Could not acquire lock for {self.file_path}."
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        gcs_lock.unlock(self.file_path)
+from mebatch.GCS_file_lock import GCSFileLock
 
 
 def run_one_job(
@@ -171,6 +158,8 @@ def job_worker(
     is_tpu: bool = False,
 ):
     assert max_num_parallel_jobs > 0, "max_num_parallel_jobs must be positive."
+    # prevent tensorflow from using GPUs
+    tf.config.set_visible_devices([], "GPU")
     new_jobs_file_path = f"{mebatch_dir}/job_pools/active_pools/{id}/new_jobs.txt"
     new_jobs_file_lock_path = (
         f"{mebatch_dir}/job_pools/active_pools/{id}/new_jobs.txt.lock"
