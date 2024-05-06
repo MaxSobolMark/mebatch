@@ -85,7 +85,7 @@ def run_new_jobs(
     tpu_availabilities: List[bool] = None,
 ):
     with new_jobs_file_lock:
-        with open(new_jobs_file_path, "r") as f:
+        with tf.io.gfile.GFile(new_jobs_file_path, "r") as f:
             new_jobs = f.read().splitlines()
         if not new_jobs:
             return
