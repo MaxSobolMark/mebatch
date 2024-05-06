@@ -88,7 +88,11 @@ def run_new_jobs(
                     if free_tpu == -1:
                         break
                     tpu_availabilities[free_tpu] = False
-                    callback = lambda future: tpu_availabilities[free_tpu] = True
+
+                    def callback(future):
+                        nonlocal tpu_availabilities
+                        tpu_availabilities[free_tpu] = True
+
                     executor.submit(
                         run_one_job,
                         job_name,
@@ -107,10 +111,12 @@ def run_new_jobs(
                         break
                     tpu_availabilities[free_tpu] = False
                     tpu_availabilities[free_tpu + 1] = False
-                    callback = lambda future: (
-                        tpu_availabilities[free_tpu] = True,
-                        tpu_availabilities[free_tpu + 1] = True,
-                    )
+
+                    def callback(future):
+                        nonlocal tpu_availabilities
+                        tpu_availabilities[free_tpu] = True
+                        tpu_availabilities[free_tpu + 1] = True
+
                     executor.submit(
                         run_one_job,
                         job_name,
@@ -123,12 +129,14 @@ def run_new_jobs(
                         break
                     for i in range(4):
                         tpu_availabilities[i] = False
-                    callback = lambda future: (
-                        tpu_availabilities[0] = True,
-                        tpu_availabilities[1] = True,
-                        tpu_availabilities[2] = True,
-                        tpu_availabilities[3] = True,
-                    )
+
+                    def callback(future):
+                        nonlocal tpu_availabilities
+                        tpu_availabilities[0] = True
+                        tpu_availabilities[1] = True
+                        tpu_availabilities[2] = True
+                        tpu_availabilities[3] = True
+
                     executor.submit(
                         run_one_job,
                         job_name,
@@ -139,8 +147,6 @@ def run_new_jobs(
             # Update the new jobs file with the remaining jobs.
             with tf.io.gfile.GFile(new_jobs_file_path, "w") as f:
                 f.write("\n".join(new_jobs[num_jobs_submitted:]))
-                
-                        
 
 
 @click.command()
@@ -196,8 +202,6 @@ def job_worker(
             executor=executor,
             new_jobs_file_path=new_jobs_file_path,
             new_jobs_file_lock=new_jobs_file_lock,
-            pipe_stdout=pipe_stdout,
-            pipe_stderr=pipe_stderr,
             send_slack_messages=send_slack_messages,
             is_tpu=is_tpu,
             tpu_availabilities=tpu_availabilities,
