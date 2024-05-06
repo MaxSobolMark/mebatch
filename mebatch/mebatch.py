@@ -51,7 +51,7 @@ def ebatch(
     """
     if priority is None:
         priority = ""
-        while priority not in ["h", "l", "r", "s", "S", "p"]:
+        while priority not in ["h", "l", "r", "s", "S", "p", "w"]:
             print(
                 f"Sending {name}. (h)igh/(l)ow-priority/(r)un on this session/(s)kip/job (p)ool/(w)orker?"
             )
@@ -107,10 +107,10 @@ def ebatch(
         with open(f"{SAVE_PATH}/workers.txt", "r") as workers:
             workers = workers.read().splitlines()
         worker_id_to_mebatch_dir = {
-            worker.split("\t")[0]: worker.split("\t")[1] for worker in workers
+            worker.split()[0]: worker.split()[1] for worker in workers
         }
         worker_id_to_is_tpu = {
-            worker.split("\t")[0]: worker.split("\t")[2] for worker in workers
+            worker.split()[0]: worker.split()[2] for worker in workers
         }
         worker_id_to_is_tpu = {
             id: is_tpu == "tpu" for id, is_tpu in worker_id_to_is_tpu.items()

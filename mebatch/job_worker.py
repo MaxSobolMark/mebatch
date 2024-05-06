@@ -59,6 +59,7 @@ def run_one_job(
     command: str,
     send_slack_messages: bool,
 ):
+    print(f"Running job {job_name}.")
     process = subprocess.Popen(
         command,
         shell=True,
