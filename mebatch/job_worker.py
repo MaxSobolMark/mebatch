@@ -10,11 +10,48 @@ from typing import List
 import click
 import time
 import subprocess
-from mebatch.job_pool import MonitoredProcessPoolExecutor, GracefulKiller
+import signal  # to handle slurm terminations, e.g. preemptions.
+import concurrent.futures  # For the process pool.
 from mebatch.slack import send_slack_message
 import tensorflow as tf  # For GCS support.
 from filelock import FileLock  # To lock the job queue file.
 from mebatch.GCS_file_lock import GCSFileLock
+
+
+class GracefulKiller:
+    """This class is used to handle signals from the OS, e.g. SIGINT, SIGTERM."""
+
+    kill_now = False
+
+    def __init__(self):
+        signal.signal(signal.SIGINT, self.exit_gracefully)
+        signal.signal(signal.SIGTERM, self.exit_gracefully)
+
+    def exit_gracefully(self, *args):
+        self.kill_now = True
+
+
+class MonitoredProcessPoolExecutor(concurrent.futures.ProcessPoolExecutor):
+    """A process pool executor that keeps track of how many workers are running."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._running_workers = 0
+        self._futures = []
+
+    def submit(self, *args, **kwargs):
+        future = super().submit(*args, **kwargs)
+        self._running_workers += 1
+        future.add_done_callback(self._worker_is_done)
+        self._futures.append(future)
+        return future
+
+    def _worker_is_done(self, future):
+        self._running_workers -= 1
+        self._futures.remove(future)
+
+    def get_pool_usage(self):
+        return self._running_workers
 
 
 def run_one_job(
