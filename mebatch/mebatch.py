@@ -99,12 +99,12 @@ def ebatch(
         if pool_id in active_pools:
             return False, priority
     if priority == "w":
-        while not os.path.exists(f"{os.getcwd()}/workers.txt"):
-            print("Could not find workers.txt in current directory.")
+        while not os.path.exists(f"{SAVE_PATH}/workers.txt"):
+            print(f"Could not find workers.txt in mebatch path ({SAVE_PATH}).")
             print("Go ahead and create it, I'll wait. (Press 'Enter' when done.)")
             input()
         # Print available workers
-        with open(f"{os.getcwd()}/workers.txt", "r") as workers:
+        with open(f"{SAVE_PATH}/workers.txt", "r") as workers:
             workers = workers.read().splitlines()
         worker_id_to_mebatch_dir = {
             worker.split("\t")[0]: worker.split("\t")[1] for worker in workers
