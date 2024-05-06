@@ -1,6 +1,9 @@
 from typing import Dict, List, Tuple, Optional
 import click
 import os
+import tensorflow as tf  # For GCS support.
+from filelock import FileLock  # To lock the job queue file.
+from mebatch.job_worker import GCSFileLock
 from mebatch.job_pool import get_active_pools, make_pool, add_job_to_pool
 
 
@@ -50,7 +53,7 @@ def ebatch(
         priority = ""
         while priority not in ["h", "l", "r", "s", "S", "p"]:
             print(
-                f"Sending {name}. (h)igh/(l)ow-priority/(r)un on this session/(s)kip/job (p)ool?"
+                f"Sending {name}. (h)igh/(l)ow-priority/(r)un on this session/(s)kip/job (p)ool/(w)orker?"
             )
             priority = input()
     if priority == "r":
@@ -95,6 +98,55 @@ def ebatch(
         add_job_to_pool(pool_id, name, command)
         if pool_id in active_pools:
             return False, priority
+    if priority == "w":
+        while not os.path.exists(f"{os.getcwd()}/workers.txt"):
+            print("Could not find workers.txt in current directory.")
+            print("Go ahead and create it, I'll wait. (Press 'Enter' when done.)")
+            input()
+        # Print available workers
+        with open(f"{os.getcwd()}/workers.txt", "r") as workers:
+            workers = workers.read().splitlines()
+        worker_id_to_mebatch_dir = {
+            worker.split("\t")[0]: worker.split("\t")[1] for worker in workers
+        }
+        worker_id_to_is_tpu = {
+            worker.split("\t")[0]: worker.split("\t")[2] for worker in workers
+        }
+        worker_id_to_is_tpu = {
+            id: is_tpu == "tpu" for id, is_tpu in worker_id_to_is_tpu.items()
+        }
+        print(f"Available workers: {', '.join(worker_id_to_mebatch_dir.keys())}")
+        print("Which worker to run on?")
+        worker_id = input()
+        while worker_id not in worker_id_to_mebatch_dir:
+            print("Please enter a valid worker ID.")
+            worker_id = input()
+        worker_mebatch_dir = worker_id_to_mebatch_dir[worker_id]
+        worker_is_tpu = worker_id_to_is_tpu[worker_id]
+        if worker_is_tpu:
+            print("How many TPU cores to use? (either 1, 2, or 4)")
+            num_tpu_cores = input()
+            while num_tpu_cores not in ["1", "2", "4"]:
+                print("Please enter 1, 2, or 4.")
+                num_tpu_cores = input()
+        new_jobs_file_lock_path = (
+            f"{worker_mebatch_dir}/job_pools/active_pools/{worker_id}/new_jobs.txt.lock"
+        )
+        new_jobs_file_lock = (
+            FileLock(new_jobs_file_lock_path)
+            if "gs://" not in worker_mebatch_dir
+            else GCSFileLock(new_jobs_file_lock_path)
+        )
+        with new_jobs_file_lock:
+            with tf.io.gfile.GFile(
+                f"{worker_mebatch_dir}/job_pools/active_pools/{worker_id}/new_jobs.txt",
+                "a",
+            ) as new_jobs_file:
+                if worker_is_tpu:
+                    new_jobs_file.write(f"{name}\t{command}\t{num_tpu_cores}\n")
+                else:
+                    new_jobs_file.write(f"{name}\t{command}\n")
+        return False, priority
 
     conf_file = "slconf" if priority == "l" else "slconf-hi"
     while not os.path.exists(f"{os.getcwd()}/{conf_file}"):

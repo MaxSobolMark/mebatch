@@ -39,6 +39,7 @@ setup(
         "paramiko",
         "slack_sdk",
         "filelock",
+        "git+https://github.com/thinkingmachines/gcs-mutex-lock.git",
     ],
     py_modules=["mebatch"],
     packages=find_packages(),  # Required
