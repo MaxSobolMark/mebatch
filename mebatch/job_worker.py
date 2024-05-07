@@ -69,28 +69,8 @@ def run_one_job(
     send_slack_messages: bool,
     mebatch_dir: str,
     worker_id: str,
-    pipe_stdout: bool = True,
-    pipe_stderr: bool = True,
 ):
     print(f"Running job {job_name}.")
-
-    if pipe_stdout:
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-        stdout_file_path = tf.io.gfile.join(
-            "./", "logs", f"{job_name}_{timestamp}.stdout"
-        )
-        stdout_file = open(stdout_file_path, "w", encoding="utf-8")
-        stdout_file.write(f"Command: {command}\n\n")
-    else:
-        stdout_file = None
-    if pipe_stderr:
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-        stderr_file_path = tf.io.gfile.join(
-            "./", "logs", f"{job_name}_{timestamp}.stderr"
-        )
-        stderr_file = open(stderr_file_path, "w", encoding="utf-8")
-    else:
-        stderr_file = None
 
     if send_slack_messages:
         response = send_slack_message(f"🏁 Job {job_name} started on {worker_id}.")
@@ -102,14 +82,12 @@ def run_one_job(
     process = subprocess.Popen(
         command,
         shell=True,
-        stdout=stdout_file,
-        stderr=stderr_file,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
-    error_code = process.wait()
-    if pipe_stdout:
-        stdout_file.close()
-    if pipe_stderr:
-        stderr_file.close()
+    # error_code = process.wait()
+    stdout, stderr = process.communicate()
+    error_code = process.returncode
     # Send a slack message alerting that the job finished.
     if send_slack_messages:
         if error_code == 0:
@@ -118,10 +96,12 @@ def run_one_job(
                 thread_ts=slack_message_ts,
             )
         else:
-            send_slack_message(
-                f"🔴 Job {job_name} finished with error code {error_code} on {worker_id}.",
+            r = send_slack_message(
+                f"🔴 Job {job_name} finished with error code {error_code} on {worker_id}.\nError:{}",
                 thread_ts=slack_message_ts,
             )
+            if r:
+                send_slack_message(stderr.decode("utf-8"), thread_ts=r["ts"])
 
 
 def run_new_jobs(
