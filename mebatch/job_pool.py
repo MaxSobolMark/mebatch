@@ -86,11 +86,11 @@ def run_one_job(
         )
     # Run the job.
     if pipe_stdout:
-        stdout_file = open(stdout_file_path, "wb", encoding="utf-8")
+        stdout_file = open(stdout_file_path, "w", encoding="utf-8")
     else:
         stdout_file = None
     if pipe_stderr:
-        stderr_file = open(stderr_file_path, "wb", encoding="utf-8")
+        stderr_file = open(stderr_file_path, "w", encoding="utf-8")
     else:
         stderr_file = None
     process = subprocess.Popen(
