@@ -77,7 +77,7 @@ def run_one_job(
     if pipe_stdout:
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         stdout_file_path = tf.io.gfile.join(
-            mebatch_dir, "logs", f"{job_name}_{timestamp}.stdout"
+            "./", "logs", f"{job_name}_{timestamp}.stdout"
         )
         stdout_file = tf.io.gfile.GFile(stdout_file_path, "w")
         stdout_file.write(f"Command: {command}\n\n")
@@ -86,7 +86,7 @@ def run_one_job(
     if pipe_stderr:
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         stderr_file_path = tf.io.gfile.join(
-            mebatch_dir, "logs", f"{job_name}_{timestamp}.stderr"
+            "./", "logs", f"{job_name}_{timestamp}.stderr"
         )
         stderr_file = tf.io.gfile.GFile(stderr_file_path, "w")
         stderr_file.write(f"Command: {command}\n\n")
@@ -169,6 +169,10 @@ def run_new_jobs(
                     def callback(future):
                         if future.exception():
                             print(f"Error in job {job_name}: {future.exception()}")
+                            if send_slack_messages:
+                                send_slack_message(
+                                    f"🔴 Job {job_name} failed on {worker_id}.\n{future.exception}"
+                                )
                         nonlocal tpu_availabilities
                         tpu_availabilities[free_tpu] = True
 
@@ -196,6 +200,9 @@ def run_new_jobs(
                     def callback(future):
                         if future.exception():
                             print(f"Error in job {job_name}: {future.exception()}")
+                            send_slack_message(
+                                f"🔴 Job {job_name} failed on {worker_id}.\n{future.exception}"
+                            )
                         nonlocal tpu_availabilities
                         tpu_availabilities[free_tpu] = True
                         tpu_availabilities[free_tpu + 1] = True
@@ -219,6 +226,9 @@ def run_new_jobs(
                     def callback(future):
                         if future.exception():
                             print(f"Error in job {job_name}: {future.exception()}")
+                            send_slack_message(
+                                f"🔴 Job {job_name} failed on {worker_id}.\n{future.exception}"
+                            )
                         nonlocal tpu_availabilities
                         tpu_availabilities[0] = True
                         tpu_availabilities[1] = True
