@@ -67,22 +67,61 @@ def run_one_job(
     job_name: str,
     command: str,
     send_slack_messages: bool,
+    mebatch_dir: str,
+    worker_id: str,
+    pipe_stdout: bool = True,
+    pipe_stderr: bool = True,
 ):
     print(f"Running job {job_name}.")
+
+    if pipe_stdout:
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        stdout_file_path = tf.io.gfile.join(
+            mebatch_dir, "logs", f"{job_name}_{timestamp}.stdout"
+        )
+        stdout_file = tf.io.gfile.GFile(stdout_file_path, "w")
+        stdout_file.write(f"Command: {command}\n\n")
+    else:
+        stdout_file = None
+    if pipe_stderr:
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        stderr_file_path = tf.io.gfile.join(
+            mebatch_dir, "logs", f"{job_name}_{timestamp}.stderr"
+        )
+        stderr_file = tf.io.gfile.GFile(stderr_file_path, "w")
+        stderr_file.write(f"Command: {command}\n\n")
+    else:
+        stderr_file = None
+
+    if send_slack_messages:
+        response = send_slack_message(f"🏁 Job {job_name} started on {worker_id}.")
+        if response:
+            slack_message_ts = response["ts"]
+        else:
+            slack_message_ts = None
+
     process = subprocess.Popen(
         command,
         shell=True,
+        stdout=stdout_file,
+        stderr=stderr_file,
     )
     error_code = process.wait()
+    if pipe_stdout:
+        stdout_file.close()
+    if pipe_stderr:
+        stderr_file.close()
     # Send a slack message alerting that the job finished.
     if send_slack_messages:
         if error_code == 0:
             send_slack_message(
-                f"🟢 Job {job_name} finished successfully.",
+                f"🟢 Job {job_name} finished successfully on {worker_id}.",
+                thread_ts=slack_message_ts,
             )
         else:
             send_slack_message(
-                f"🔴 Job {job_name} finished with error code {error_code}.",
+                f"🔴 Job {job_name} finished with error code {error_code} on {worker_id}.",
+                thread_ts=slack_message_ts,
             )
 
 
@@ -90,6 +129,7 @@ def run_new_jobs(
     executor: MonitoredProcessPoolExecutor,
     new_jobs_file_path: str,
     new_jobs_file_lock: FileLock,
+    worker_id: str,
     send_slack_messages: bool = True,
     is_tpu: bool = False,
     tpu_availabilities: List[bool] = None,
@@ -107,6 +147,7 @@ def run_new_jobs(
                     job_name,
                     command,
                     send_slack_messages,
+                    worker_id,
                 )
             # Clear the new jobs file.
             with tf.io.gfile.GFile(new_jobs_file_path, "w") as f:
@@ -239,6 +280,7 @@ def job_worker(
             executor=executor,
             new_jobs_file_path=new_jobs_file_path,
             new_jobs_file_lock=new_jobs_file_lock,
+            worker_id=id,
             send_slack_messages=send_slack_messages,
             is_tpu=is_tpu,
             tpu_availabilities=tpu_availabilities,
