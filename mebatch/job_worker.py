@@ -28,7 +28,7 @@ TPU_ENVIRONMENT_VARIABLES = {
 
 
 class GracefulKiller:
-    """This class is used to handle signals from the OS, e.g. SIGINT, SIGTERM."""
+    """This class is used to handle signals from the OS, e.g. SIGINT, SIGTERM"""
 
     kill_now = False
 
@@ -129,6 +129,7 @@ def run_new_jobs(
     executor: MonitoredProcessPoolExecutor,
     new_jobs_file_path: str,
     new_jobs_file_lock: FileLock,
+    mebatch_dir: str,
     worker_id: str,
     send_slack_messages: bool = True,
     is_tpu: bool = False,
@@ -147,6 +148,7 @@ def run_new_jobs(
                     job_name,
                     command,
                     send_slack_messages,
+                    mebatch_dir,
                     worker_id,
                 )
             # Clear the new jobs file.
@@ -165,14 +167,18 @@ def run_new_jobs(
                     tpu_availabilities[free_tpu] = False
 
                     def callback(future):
+                        if future.exception():
+                            print(f"Error in job {job_name}: {future.exception()}")
                         nonlocal tpu_availabilities
                         tpu_availabilities[free_tpu] = True
 
-                    executor.submit(
+                    job = executor.submit(
                         run_one_job,
                         job_name,
                         f"{TPU_ENVIRONMENT_VARIABLES['TPU' + str(free_tpu)]} {command}",
                         send_slack_messages,
+                        mebatch_dir,
+                        worker_id,
                     ).add_done_callback(callback)
                     num_jobs_submitted += 1
                 elif num_tpus == 2:
@@ -188,6 +194,8 @@ def run_new_jobs(
                     tpu_availabilities[free_tpu + 1] = False
 
                     def callback(future):
+                        if future.exception():
+                            print(f"Error in job {job_name}: {future.exception()}")
                         nonlocal tpu_availabilities
                         tpu_availabilities[free_tpu] = True
                         tpu_availabilities[free_tpu + 1] = True
@@ -198,6 +206,8 @@ def run_new_jobs(
                         # f"TPU{free_tpu}{free_tpu + 1} {command}",
                         f"{TPU_ENVIRONMENT_VARIABLES['TPU' + str(free_tpu)+str(free_tpu+1)]} {command}",
                         send_slack_messages,
+                        mebatch_dir,
+                        worker_id,
                     ).add_done_callback(callback)
                     num_jobs_submitted += 1
                 elif num_tpus == 4:
@@ -207,6 +217,8 @@ def run_new_jobs(
                         tpu_availabilities[i] = False
 
                     def callback(future):
+                        if future.exception():
+                            print(f"Error in job {job_name}: {future.exception()}")
                         nonlocal tpu_availabilities
                         tpu_availabilities[0] = True
                         tpu_availabilities[1] = True
@@ -218,6 +230,8 @@ def run_new_jobs(
                         job_name,
                         command,
                         send_slack_messages,
+                        mebatch_dir,
+                        worker_id,
                     ).add_done_callback(callback)
                     num_jobs_submitted += 1
             # Update the new jobs file with the remaining jobs.
