@@ -294,6 +294,7 @@ def job_worker(
             executor=executor,
             new_jobs_file_path=new_jobs_file_path,
             new_jobs_file_lock=new_jobs_file_lock,
+            mebatch_dir=mebatch_dir,
             worker_id=id,
             send_slack_messages=send_slack_messages,
             is_tpu=is_tpu,
