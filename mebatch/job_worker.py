@@ -291,6 +291,18 @@ def job_worker(
         # Sleep for a while before checking for new jobs.
         time.sleep(5)
         print(tpu_availabilities)
+    if killer.kill_now:
+        print("Job pool killed.")
+        if send_slack_messages:
+            send_slack_message(
+                f"Job pool {id} was killed ☠️.",
+            )
+    else:
+        print("Job pool finished.")
+        if send_slack_messages:
+            send_slack_message(
+                f"Job pool {id} finished 📈.",
+            )
 
 
 if __name__ == "__main__":
