@@ -79,7 +79,7 @@ def run_one_job(
         stdout_file_path = tf.io.gfile.join(
             "./", "logs", f"{job_name}_{timestamp}.stdout"
         )
-        stdout_file = open(stdout_file_path, "wb", encoding="utf-8")
+        stdout_file = open(stdout_file_path, "w", encoding="utf-8")
         stdout_file.write(f"Command: {command}\n\n")
     else:
         stdout_file = None
@@ -88,7 +88,7 @@ def run_one_job(
         stderr_file_path = tf.io.gfile.join(
             "./", "logs", f"{job_name}_{timestamp}.stderr"
         )
-        stderr_file = open(stderr_file_path, "wb", encoding="utf-8")
+        stderr_file = open(stderr_file_path, "w", encoding="utf-8")
     else:
         stderr_file = None
 
