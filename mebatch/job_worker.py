@@ -97,7 +97,7 @@ def run_one_job(
             )
         else:
             r = send_slack_message(
-                f"🔴 Job {job_name} finished with error code {error_code} on {worker_id}.\nError:{}",
+                f"🔴 Job {job_name} finished with error code {error_code} on {worker_id}.",
                 thread_ts=slack_message_ts,
             )
             if r:
