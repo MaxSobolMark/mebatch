@@ -6,8 +6,9 @@ The orchestrator and the job worker communicate through the file system.
 Jobs are assigned at the file {mebatch_dir}/job_pools/active_pools/{id}/new_jobs.txt.
 
 """
-from typing import List
+from typing import Dict, List
 import click
+import datetime
 import time
 import subprocess
 import signal  # to handle slurm terminations, e.g. preemptions.
@@ -228,6 +229,33 @@ def run_new_jobs(
                 f.write("\n".join(new_jobs[num_jobs_submitted:]))
 
 
+def update_last_online_time(mebatch_dir: str, id: str):
+    last_online_time_path = tf.io.gfile.join(
+        mebatch_dir, "job_pools/active_pools", id, "last_online_time.txt"
+    )
+    with tf.io.gfile.GFile(last_online_time_path, "w") as f:
+        f.write(str(time.time()))
+
+
+def read_last_online_times(mebatch_dir: str, ids: List[str]) -> Dict[str, str]:
+    def read_last_online_time(id) -> str:
+        last_online_time_path = tf.io.gfile.join(
+            mebatch_dir, "job_pools/active_pools", id, "last_online_time.txt"
+        )
+        if not tf.io.gfile.exists(last_online_time_path):
+            return "N/A"
+        with tf.io.gfile.GFile(last_online_time_path, "r") as f:
+            # Format the time to be human-readable.
+            return datetime.datetime.fromtimestamp(float(f.read())).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+
+    # Read online times in parallel.
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        last_online_times = list(executor.map(read_last_online_time, ids))
+    return dict(zip(ids, last_online_times))
+
+
 @click.command()
 @click.argument("mebatch_dir", type=str)
 @click.argument("id", type=str)
@@ -278,6 +306,8 @@ def job_worker(
         tpu_availabilities = None
 
     while True:
+        # Update the last online time.
+        update_last_online_time(mebatch_dir, id)
         # Run the jobs in new_jobs.txt.
         run_new_jobs(
             executor=executor,

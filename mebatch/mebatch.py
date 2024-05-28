@@ -5,6 +5,7 @@ import tensorflow as tf  # For GCS support.
 from filelock import FileLock  # To lock the job queue file.
 from mebatch.GCS_file_lock import GCSFileLock
 from mebatch.job_pool import get_active_pools, make_pool, add_job_to_pool
+from mebatch.job_worker import read_last_online_times
 
 
 VARIABLE_MARKER = "***"
@@ -115,7 +116,14 @@ def ebatch(
         worker_id_to_is_tpu = {
             id: is_tpu == "tpu" for id, is_tpu in worker_id_to_is_tpu.items()
         }
-        print(f"Available workers: {', '.join(worker_id_to_mebatch_dir.keys())}")
+        # print(f"Available workers: {', '.join(worker_id_to_mebatch_dir.keys())}")
+        worker_id_to_last_online_time = read_last_online_times(
+            workers[0].split()[1], worker_id_to_mebatch_dir.keys()
+        )
+        print("Available workers:")
+        for worker_id, last_online_time in worker_id_to_last_online_time.items():
+            print(f"{worker_id} (last online: {last_online_time})")
+
         print("Which worker to run on?")
         worker_id = input()
         while worker_id not in worker_id_to_mebatch_dir:
