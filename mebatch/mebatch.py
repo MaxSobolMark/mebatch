@@ -54,9 +54,26 @@ def ebatch(
         priority = ""
         while priority not in ["h", "l", "r", "s", "S", "p", "w"]:
             print(
-                f"Sending {name}. (h)igh/(l)ow-priority/(r)un on this session/(s)kip/job (p)ool/(w)orker?"
+                f"Sending {name}. (h)igh/(l)ow-priority/(r)un on this session/(s)kip/job (p)ool/(w)orker/check available workers (w?)?"
             )
             priority = input()
+            if priority == "w?":
+                priority = "w"
+                # Print available workers
+                with open(f"{SAVE_PATH}/workers.txt", "r") as workers:
+                    workers = workers.read().splitlines()
+                worker_id_to_mebatch_dir = {
+                    worker.split()[0]: worker.split()[1] for worker in workers
+                }
+                worker_id_to_last_online_time = read_last_online_times(
+                    workers[0].split()[1], worker_id_to_mebatch_dir.keys()
+                )
+                print("Available workers:")
+                for (
+                    worker_id,
+                    last_online_time,
+                ) in worker_id_to_last_online_time.items():
+                    print(f"{worker_id} (last online: {last_online_time})")
     if priority == "r":
         return True, priority
     if priority.lower() == "s":
@@ -116,14 +133,6 @@ def ebatch(
         worker_id_to_is_tpu = {
             id: is_tpu == "tpu" for id, is_tpu in worker_id_to_is_tpu.items()
         }
-        # print(f"Available workers: {', '.join(worker_id_to_mebatch_dir.keys())}")
-        worker_id_to_last_online_time = read_last_online_times(
-            workers[0].split()[1], worker_id_to_mebatch_dir.keys()
-        )
-        print("Available workers:")
-        for worker_id, last_online_time in worker_id_to_last_online_time.items():
-            print(f"{worker_id} (last online: {last_online_time})")
-
         print("Which worker to run on?")
         worker_id = input()
         while worker_id not in worker_id_to_mebatch_dir:
