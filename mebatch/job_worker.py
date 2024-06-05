@@ -13,6 +13,7 @@ import time
 import subprocess
 import signal  # to handle slurm terminations, e.g. preemptions.
 import concurrent.futures  # For the process pool.
+import asyncio
 from mebatch.slack import send_slack_message
 import tensorflow as tf  # For GCS support.
 from filelock import FileLock  # To lock the job queue file.
@@ -254,6 +255,50 @@ def read_last_online_times(mebatch_dir: str, ids: List[str]) -> Dict[str, str]:
     with concurrent.futures.ThreadPoolExecutor() as executor:
         last_online_times = list(executor.map(read_last_online_time, ids))
     return dict(zip(ids, last_online_times))
+
+
+async def start_tpu_worker_through_ssh(
+    mebatch_dir: str,
+    id: str,
+    tpu_ssh_name: str,
+    tpu_zone="us-central2-b",
+    timeout: int = 20,
+):
+    commands_to_run = [
+        "tmux kill-server",
+        "tmux new-session -d -s mebatch_worker",
+        "tmux send-keys -t mebatch_worker 'source ~/.bashrc' Enter",
+        "tmux send-keys -t mebatch_worker 'cd /nfs/iris_nfs/users/maxsobolmark/jaxrl_env' Enter",
+        f"tmux send-keys -t mebatch_worker 'gsutil rm {mebatch_dir}/job_pools/active_pools/{id}/new_jobs.txt.lock' Enter",
+        f"start-mebatch-worker {id}",
+    ]
+    command = " && ".join(commands_to_run)
+    # Run the commands on the TPU.
+    tpu_command = f"gcloud compute tpus tpu-vm ssh --zone={tpu_zone} --command='{command}' {tpu_ssh_name}"
+
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            tpu_command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        # Kill the process if it times out.
+        if proc:
+            try:
+                proc.terminate()
+                await proc.wait()
+            except Exception as e:
+                raise Exception(f"Failed to terminate the process: {e}")
+        raise Exception(
+            f"Failed to start the TPU worker: Timeout error after {timeout}s."
+        )
+
+    if proc.returncode != 0:
+        raise Exception(f"Failed to start the TPU worker: {stderr.decode('utf-8')}")
+
+    print(f"Successfully started the TPU worker {id}.")
 
 
 @click.command()

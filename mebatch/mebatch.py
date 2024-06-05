@@ -1,11 +1,9 @@
 from typing import Dict, List, Tuple, Optional
 import click
 import os
-import tensorflow as tf  # For GCS support.
 from filelock import FileLock  # To lock the job queue file.
 from mebatch.GCS_file_lock import GCSFileLock
 from mebatch.job_pool import get_active_pools, make_pool, add_job_to_pool
-from mebatch.job_worker import read_last_online_times
 
 
 VARIABLE_MARKER = "***"
@@ -58,6 +56,8 @@ def ebatch(
             )
             priority = input()
             if priority == "w?":
+                from mebatch.job_worker import read_last_online_times
+
                 priority = "w"
                 # Print available workers
                 with open(f"{SAVE_PATH}/workers.txt", "r") as workers:
@@ -117,6 +117,10 @@ def ebatch(
         if pool_id in active_pools:
             return False, priority
     if priority == "w":
+        import tensorflow as tf  # For GCS support.
+
+        tf.config.set_visible_devices([], "GPU")
+
         while not os.path.exists(f"{SAVE_PATH}/workers.txt"):
             print(f"Could not find workers.txt in mebatch path ({SAVE_PATH}).")
             print("Go ahead and create it, I'll wait. (Press 'Enter' when done.)")
@@ -259,7 +263,6 @@ def mebatch(
     This example command will run ebatch 9=3*3 times (3 seeds * 3 learning rates).
     """
     # prevent tensorflow from using GPUs
-    tf.config.set_visible_devices([], "GPU")
     if not os.path.exists(SAVE_PATH):
         os.makedirs(SAVE_PATH)
         os.makedirs(f"{SAVE_PATH}/job_pools")
