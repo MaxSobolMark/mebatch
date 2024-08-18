@@ -247,6 +247,12 @@ def ask_job_order(run_names: List[str]) -> List[int]:
     help="Memory limit for each job in GB",
     type=int,
 )
+@click.option(
+    "--dont_save",
+    is_flag=True,
+    default=False,
+    help="Don't save the command to the history file",
+)
 def mebatch(
     run_names: str,
     commands: str,
@@ -254,6 +260,7 @@ def mebatch(
     ask_order: bool = False,
     time_limit: int = 130,
     memory: int = 20,
+    dont_save: bool = False,
 ):
     """
     run_names and commands will contain encoded lists of options using the following format
@@ -318,9 +325,10 @@ def mebatch(
         print("To use askme responses for next run, add:")
         print(f"--previous_askme_responses={','.join(askme_responses)}")
     order = ",".join([str(i) for i in order])
-    save_command_to_history(
-        run_names, commands, previous_askme_responses, order, priority_responses
-    )
+    if not dont_save:
+        save_command_to_history(
+            run_names, commands, previous_askme_responses, order, priority_responses
+        )
 
 
 def mebatch_helper(
