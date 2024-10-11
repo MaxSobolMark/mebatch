@@ -6,6 +6,7 @@ The orchestrator and the job worker communicate through the file system.
 Jobs are assigned at the file {mebatch_dir}/job_pools/active_pools/{id}/new_jobs.txt.
 
 """
+
 from typing import Dict, List
 import click
 import datetime
@@ -30,7 +31,7 @@ TPU_ENVIRONMENT_VARIABLES = {
 
 
 class GracefulKiller:
-    """This class is used to handle signals from the OS, e.g. SIGINT, SIGTERM"""
+    """This class is used to handle signals from the OS, e.g. SIGINT, SIGTERM."""
 
     kill_now = False
 
@@ -157,15 +158,16 @@ def run_new_jobs(
                         nonlocal tpu_availabilities
                         tpu_availabilities[free_tpu] = True
 
-                    job = executor.submit(
-                        run_one_job,
-                        job_name,
-                        f"{TPU_ENVIRONMENT_VARIABLES['TPU' + str(free_tpu)]} {command}",
-                        send_slack_messages,
-                        mebatch_dir,
-                        worker_id,
-                    ).add_done_callback(callback)
-                    num_jobs_submitted += 1
+                    # Add TPU environment variables to the command
+                    command = (
+                        f"{TPU_ENVIRONMENT_VARIABLES['TPU' + str(free_tpu)]} {command}"
+                    )
+                    # After every && in the command, add the TPU environment variables.
+                    command = command.replace(
+                        "&&",
+                        f"&& {TPU_ENVIRONMENT_VARIABLES['TPU' + str(free_tpu)]}",
+                    )
+
                 elif num_tpus == 2:
                     # either 01 or 23
                     free_tpu = -1
@@ -188,16 +190,14 @@ def run_new_jobs(
                         tpu_availabilities[free_tpu] = True
                         tpu_availabilities[free_tpu + 1] = True
 
-                    executor.submit(
-                        run_one_job,
-                        job_name,
-                        # f"TPU{free_tpu}{free_tpu + 1} {command}",
-                        f"{TPU_ENVIRONMENT_VARIABLES['TPU' + str(free_tpu)+str(free_tpu+1)]} {command}",
-                        send_slack_messages,
-                        mebatch_dir,
-                        worker_id,
-                    ).add_done_callback(callback)
-                    num_jobs_submitted += 1
+                    # Add TPU environment variables to the command
+                    command = f"{TPU_ENVIRONMENT_VARIABLES['TPU' + str(free_tpu)+str(free_tpu+1)]} {command}"
+                    # After every && in the command, add the TPU environment variables.
+                    command = command.replace(
+                        "&&",
+                        f"&& {TPU_ENVIRONMENT_VARIABLES['TPU' + str(free_tpu)+str(free_tpu+1)]}",
+                    )
+
                 elif num_tpus == 4:
                     if not all(tpu_availabilities):
                         break
@@ -216,15 +216,16 @@ def run_new_jobs(
                         tpu_availabilities[2] = True
                         tpu_availabilities[3] = True
 
-                    executor.submit(
-                        run_one_job,
-                        job_name,
-                        command,
-                        send_slack_messages,
-                        mebatch_dir,
-                        worker_id,
-                    ).add_done_callback(callback)
-                    num_jobs_submitted += 1
+                executor.submit(
+                    run_one_job,
+                    job_name,
+                    command,
+                    send_slack_messages,
+                    mebatch_dir,
+                    worker_id,
+                ).add_done_callback(callback)
+                num_jobs_submitted += 1
+
             # Update the new jobs file with the remaining jobs.
             with tf.io.gfile.GFile(new_jobs_file_path, "w") as f:
                 f.write("\n".join(new_jobs[num_jobs_submitted:]))
